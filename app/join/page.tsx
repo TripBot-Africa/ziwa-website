@@ -23,32 +23,34 @@ export default function JoinPage() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+
     setLoading(true);
     setSuccess("");
     setError("");
 
-    const formData = new FormData(event.currentTarget);
-
     const member = {
-      full_name: String(formData.get("full_name") || ""),
-      phone: String(formData.get("phone") || ""),
-      email: String(formData.get("email") || ""),
-      province: String(formData.get("province") || ""),
-      district: String(formData.get("district") || ""),
-      suburb: String(formData.get("suburb") || ""),
-      ward: String(formData.get("ward") || ""),
-      sector: String(formData.get("sector") || ""),
-      message: String(formData.get("message") || ""),
+      full_name: String(formData.get("full_name") || "").trim(),
+      phone: String(formData.get("phone") || "").trim(),
+      email: String(formData.get("email") || "").trim(),
+      province: String(formData.get("province") || "").trim(),
+      district: String(formData.get("district") || "").trim(),
+      suburb: String(formData.get("suburb") || "").trim(),
+      ward: String(formData.get("ward") || "").trim(),
+      sector: String(formData.get("sector") || "").trim(),
+      message: String(formData.get("message") || "").trim(),
       status: "pending",
     };
 
-    const { error } = await supabase.from("members").insert([member]);
+    const { error: insertError } = await supabase.from("members").insert(member);
 
-    if (error) {
+    if (insertError) {
       setError("Failed to submit application. Please try again.");
     } else {
       setSuccess("Your ZIWA membership interest has been submitted successfully.");
-    const form =event.currentTargetS;
+      form.reset();
     }
 
     setLoading(false);
@@ -61,7 +63,9 @@ export default function JoinPage() {
           <p className="text-sm font-black uppercase text-green-200">
             Membership
           </p>
+
           <h1 className="mt-4 text-4xl font-black sm:text-5xl">Join ZIWA</h1>
+
           <p className="mt-6 max-w-3xl text-lg leading-8">
             Become part of Zimbabwe&apos;s growing movement for informal
             workers, farmers, traders, transporters, artisans and miners.
@@ -87,7 +91,10 @@ export default function JoinPage() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} className="mt-8 grid gap-5 md:grid-cols-2">
+          <form
+            onSubmit={handleSubmit}
+            className="mt-8 grid gap-5 md:grid-cols-2"
+          >
             <input
               name="full_name"
               type="text"
