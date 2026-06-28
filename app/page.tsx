@@ -49,6 +49,8 @@ const updates = [
 
 const navigation = [
   { label: "HOME", href: "/" },
+  { label: "Admin Content", href: "/admin/content" },
+ {label: "Reports", href: "/report" },
   { label: "ABOUT", href: "/about" },
   { label: "POLICIES", href: "/policies" },
   { label: "STATEMENTS", href: "/statements" },
@@ -84,7 +86,7 @@ export default function HomePage() {
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
           <a href="/" className="flex items-center gap-3">
             <img
-              src="/logo-ziwa.jpg.jpeg"
+              src="/ziwa-logo.jpg.png"
               alt="ZIWA Logo"
               className="h-20 w-auto shrink-0 object-contain sm:h-24"
             />
