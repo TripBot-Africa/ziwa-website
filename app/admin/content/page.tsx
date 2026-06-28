@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { supabase } from "@/app/lib/supabaseClient";
 
 type Post = {
@@ -11,14 +11,18 @@ type Post = {
   excerpt: string;
   content: string;
   status: string;
+  image_url: string | null;
   created_at: string;
 };
 
 export default function AdminContentPage() {
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [imageFile, setImageFile] = useState<File | null>(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -56,7 +60,26 @@ export default function AdminContentPage() {
       .select("*")
       .order("created_at", { ascending: false });
 
-    if (data) setPosts(data);
+    if (data) setPosts(data as Post[]);
+  }
+
+  async function uploadImage(slug: string) {
+    if (!imageFile) return "";
+
+    const fileExt = imageFile.name.split(".").pop();
+    const fileName = `${slug}-${Date.now()}.${fileExt}`;
+
+    const { error } = await supabase.storage
+      .from("post-images")
+      .upload(fileName, imageFile);
+
+    if (error) throw error;
+
+    const { data } = supabase.storage
+      .from("post-images")
+      .getPublicUrl(fileName);
+
+    return data.publicUrl;
   }
 
   async function submitPost(event: React.FormEvent<HTMLFormElement>) {
@@ -64,29 +87,43 @@ export default function AdminContentPage() {
     setLoading(true);
     setMessage("");
 
-    const slug = makeSlug(form.title);
+    try {
+      const slug = makeSlug(form.title);
+      const imageUrl = await uploadImage(slug);
 
-    const { error } = await supabase.from("posts").insert({
-      title: form.title,
-      slug,
-      category: form.category,
-      excerpt: form.excerpt,
-      content: form.content,
-      status: form.status,
-    });
-
-    if (error) {
-      setMessage("Failed to save post. Check title/slug or Supabase table.");
-    } else {
-      setMessage("Post saved successfully.");
-      setForm({
-        title: "",
-        category: "Article",
-        excerpt: "",
-        content: "",
-        status: "draft",
+      const { error } = await supabase.from("posts").insert({
+        title: form.title,
+        slug,
+        category: form.category,
+        excerpt: form.excerpt,
+        content: form.content,
+        status: form.status,
+        image_url: imageUrl || null,
       });
-      fetchPosts();
+
+      if (error) {
+        setMessage("Failed to save post. Check Supabase table or storage.");
+      } else {
+        setMessage("Post saved successfully.");
+
+        setForm({
+          title: "",
+          category: "Article",
+          excerpt: "",
+          content: "",
+          status: "draft",
+        });
+
+        setImageFile(null);
+
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
+
+        fetchPosts();
+      }
+    } catch {
+      setMessage("Image upload failed. Check your Supabase post-images bucket.");
     }
 
     setLoading(false);
@@ -175,6 +212,20 @@ export default function AdminContentPage() {
                 <option value="published">Published</option>
               </select>
 
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={(e) => setImageFile(e.target.files?.[0] || null)}
+                className="rounded-lg border p-4"
+              />
+
+              {imageFile && (
+                <p className="text-sm font-bold text-green-800">
+                  Selected image: {imageFile.name}
+                </p>
+              )}
+
               <textarea
                 value={form.excerpt}
                 onChange={(e) =>
@@ -217,11 +268,22 @@ export default function AdminContentPage() {
                     key={post.id}
                     className="rounded-2xl border border-zinc-200 p-5"
                   >
+                    {post.image_url && (
+                      <img
+                        src={post.image_url}
+                        alt={post.title}
+                        className="mb-4 h-44 w-full rounded-xl object-cover"
+                      />
+                    )}
+
                     <p className="text-xs font-black uppercase text-green-700">
                       {post.category} • {post.status}
                     </p>
+
                     <h3 className="mt-2 text-lg font-black">{post.title}</h3>
+
                     <p className="mt-2 text-sm text-zinc-600">/{post.slug}</p>
+
                     <p className="mt-3 text-sm leading-6 text-zinc-700">
                       {post.excerpt}
                     </p>
