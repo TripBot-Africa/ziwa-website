@@ -27,7 +27,7 @@ export default function LoginPage() {
       return;
     }
 
-    window.location.href = "/admin";
+    window.location.href = "/admin/content";
   }
 
   return (
