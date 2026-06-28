@@ -26,6 +26,7 @@ export default function AdminContentPage() {
 
   const [checkingAccess, setCheckingAccess] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
@@ -41,6 +42,8 @@ export default function AdminContentPage() {
     featured: true,
     seo_title: "",
     seo_description: "",
+    image_url: "",
+    pdf_url: "",
   });
 
   useEffect(() => {
@@ -87,8 +90,28 @@ export default function AdminContentPage() {
     if (error) throw error;
 
     const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
-
     return data.publicUrl;
+  }
+
+  function resetForm() {
+    setEditingId(null);
+    setForm({
+      title: "",
+      category: "Campaign",
+      excerpt: "",
+      content: "",
+      status: "published",
+      video_url: "",
+      featured: true,
+      seo_title: "",
+      seo_description: "",
+      image_url: "",
+      pdf_url: "",
+    });
+    setImageFile(null);
+    setPdfFile(null);
+    if (imageInputRef.current) imageInputRef.current.value = "";
+    if (pdfInputRef.current) pdfInputRef.current.value = "";
   }
 
   async function submitPost(event: React.FormEvent<HTMLFormElement>) {
@@ -98,56 +121,75 @@ export default function AdminContentPage() {
 
     try {
       const slug = makeSlug(form.title);
+      const uploadedImage = await uploadFile("post-images", imageFile, slug);
+      const uploadedPdf = await uploadFile("post-pdfs", pdfFile, slug);
 
-      const imageUrl = await uploadFile("post-images", imageFile, slug);
-      const pdfUrl = await uploadFile("post-pdfs", pdfFile, slug);
-
-      const { error } = await supabase.from("posts").insert({
+      const payload = {
         title: form.title.trim(),
         slug,
         category: form.category,
         excerpt: form.excerpt.trim(),
         content: form.content.trim(),
         status: form.status,
-        image_url: imageUrl,
-        pdf_url: pdfUrl,
+        image_url: uploadedImage || form.image_url || null,
+        pdf_url: uploadedPdf || form.pdf_url || null,
         video_url: form.video_url.trim() || null,
         featured: form.featured,
         seo_title: form.seo_title.trim() || form.title.trim(),
         seo_description: form.seo_description.trim() || form.excerpt.trim(),
-        published_at: form.status === "published" ? new Date().toISOString() : null,
-      });
+        published_at:
+          form.status === "published" ? new Date().toISOString() : null,
+        updated_at: new Date().toISOString(),
+      };
 
-      if (error) {
-        setMessage("Failed to save content. Check Supabase table, slug, or storage buckets.");
+      const result = editingId
+        ? await supabase.from("posts").update(payload).eq("id", editingId)
+        : await supabase.from("posts").insert(payload);
+
+      if (result.error) {
+        setMessage("Failed to save. Check Supabase table, columns or storage.");
       } else {
-        setMessage("Content saved successfully.");
-
-        setForm({
-          title: "",
-          category: "Campaign",
-          excerpt: "",
-          content: "",
-          status: "published",
-          video_url: "",
-          featured: true,
-          seo_title: "",
-          seo_description: "",
-        });
-
-        setImageFile(null);
-        setPdfFile(null);
-
-        if (imageInputRef.current) imageInputRef.current.value = "";
-        if (pdfInputRef.current) pdfInputRef.current.value = "";
-
+        setMessage(editingId ? "Content updated successfully." : "Content published successfully.");
+        resetForm();
         fetchPosts();
       }
     } catch {
-      setMessage("Upload failed. Check that post-images and post-pdfs buckets exist and are public.");
+      setMessage("Upload failed. Check that post-images and post-pdfs buckets are public.");
     }
 
     setLoading(false);
+  }
+
+  function editPost(post: Post) {
+    setEditingId(post.id);
+    setForm({
+      title: post.title || "",
+      category: post.category || "Campaign",
+      excerpt: post.excerpt || "",
+      content: post.content || "",
+      status: post.status || "draft",
+      video_url: post.video_url || "",
+      featured: Boolean(post.featured),
+      seo_title: post.seo_title || "",
+      seo_description: post.seo_description || "",
+      image_url: post.image_url || "",
+      pdf_url: post.pdf_url || "",
+    });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  async function deletePost(id: string) {
+    const confirmed = confirm("Delete this content permanently?");
+    if (!confirmed) return;
+
+    const { error } = await supabase.from("posts").delete().eq("id", id);
+
+    if (error) {
+      setMessage("Failed to delete content.");
+    } else {
+      setMessage("Content deleted.");
+      fetchPosts();
+    }
   }
 
   async function logout() {
@@ -168,12 +210,11 @@ export default function AdminContentPage() {
       <section className="mx-auto max-w-7xl">
         <div className="flex flex-col justify-between gap-4 rounded-3xl bg-green-900 p-8 text-white sm:flex-row sm:items-center">
           <div>
-            <p className="text-sm font-black uppercase text-green-200">
-              ZIWA Admin
-            </p>
-            <h1 className="mt-3 text-4xl font-black">Content Dashboard</h1>
+            <p className="text-sm font-black uppercase text-green-200">ZIWA Admin</p>
+            <h1 className="mt-3 text-4xl font-black">Publishing Dashboard</h1>
             <p className="mt-4 max-w-3xl text-sm leading-7 text-green-50">
-              Publish articles, policies, campaigns, statements, images, PDFs and videos.
+              Create, edit, publish, feature and manage ZIWA campaigns, policies,
+              articles, statements, images and PDFs.
             </p>
           </div>
 
@@ -186,13 +227,22 @@ export default function AdminContentPage() {
         </div>
 
         <div className="mt-8 grid gap-8 lg:grid-cols-2">
-          <form
-            onSubmit={submitPost}
-            className="rounded-3xl bg-white p-6 shadow-lg"
-          >
-            <h2 className="text-2xl font-black text-green-800">
-              Create New Publication
-            </h2>
+          <form onSubmit={submitPost} className="rounded-3xl bg-white p-6 shadow-lg">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-2xl font-black text-green-800">
+                {editingId ? "Edit Publication" : "Create New Publication"}
+              </h2>
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={resetForm}
+                  className="rounded-lg border px-4 py-2 text-sm font-black"
+                >
+                  CANCEL EDIT
+                </button>
+              )}
+            </div>
 
             {message && (
               <div className="mt-5 rounded-xl bg-zinc-100 p-4 font-bold">
@@ -238,7 +288,7 @@ export default function AdminContentPage() {
                     setForm({ ...form, featured: e.target.checked })
                   }
                 />
-                Mark as featured
+                Mark as featured on website
               </label>
 
               <input
@@ -249,10 +299,12 @@ export default function AdminContentPage() {
                 className="rounded-lg border p-4"
               />
 
-              {imageFile && (
-                <p className="text-sm font-bold text-green-800">
-                  Selected image: {imageFile.name}
-                </p>
+              {form.image_url && !imageFile && (
+                <img
+                  src={form.image_url}
+                  alt="Current post"
+                  className="h-40 w-full rounded-xl object-cover"
+                />
               )}
 
               <input
@@ -263,10 +315,14 @@ export default function AdminContentPage() {
                 className="rounded-lg border p-4"
               />
 
-              {pdfFile && (
-                <p className="text-sm font-bold text-green-800">
-                  Selected PDF: {pdfFile.name}
-                </p>
+              {form.pdf_url && !pdfFile && (
+                <a
+                  href={form.pdf_url}
+                  target="_blank"
+                  className="text-sm font-black text-green-800"
+                >
+                  View current PDF →
+                </a>
               )}
 
               <input
@@ -287,8 +343,8 @@ export default function AdminContentPage() {
                 value={form.content}
                 onChange={(e) => setForm({ ...form, content: e.target.value })}
                 required
-                placeholder="Write full article, policy, campaign or statement here..."
-                className="min-h-[300px] rounded-lg border p-4"
+                placeholder="Write full publication here..."
+                className="min-h-[320px] rounded-lg border p-4"
               />
 
               <input
@@ -311,7 +367,11 @@ export default function AdminContentPage() {
                 disabled={loading}
                 className="rounded-lg bg-green-800 px-6 py-4 font-black text-white hover:bg-green-900 disabled:bg-zinc-500"
               >
-                {loading ? "SAVING..." : "SAVE PUBLICATION"}
+                {loading
+                  ? "SAVING..."
+                  : editingId
+                    ? "UPDATE PUBLICATION"
+                    : "SAVE PUBLICATION"}
               </button>
             </div>
           </form>
@@ -326,10 +386,7 @@ export default function AdminContentPage() {
                 <p className="font-bold text-zinc-600">No content yet.</p>
               ) : (
                 posts.map((post) => (
-                  <article
-                    key={post.id}
-                    className="rounded-2xl border border-zinc-200 p-5"
-                  >
+                  <article key={post.id} className="rounded-2xl border border-zinc-200 p-5">
                     {post.image_url && (
                       <img
                         src={post.image_url}
@@ -339,27 +396,40 @@ export default function AdminContentPage() {
                     )}
 
                     <p className="text-xs font-black uppercase text-green-700">
-                      {post.category} • {post.status}{" "}
-                      {post.featured ? "• Featured" : ""}
+                      {post.category} • {post.status} {post.featured ? "• Featured" : ""}
                     </p>
 
                     <h3 className="mt-2 text-lg font-black">{post.title}</h3>
-
                     <p className="mt-2 text-sm text-zinc-600">/{post.slug}</p>
-
                     <p className="mt-3 text-sm leading-6 text-zinc-700">
                       {post.excerpt}
                     </p>
 
-                    {post.pdf_url && (
-                      <a
-                        href={post.pdf_url}
-                        target="_blank"
-                        className="mt-4 inline-block text-sm font-black text-green-800"
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        onClick={() => editPost(post)}
+                        className="rounded-lg bg-green-800 px-4 py-2 text-sm font-black text-white"
                       >
-                        View PDF →
-                      </a>
-                    )}
+                        EDIT
+                      </button>
+
+                      <button
+                        onClick={() => deletePost(post.id)}
+                        className="rounded-lg bg-red-700 px-4 py-2 text-sm font-black text-white"
+                      >
+                        DELETE
+                      </button>
+
+                      {post.pdf_url && (
+                        <a
+                          href={post.pdf_url}
+                          target="_blank"
+                          className="rounded-lg border px-4 py-2 text-sm font-black"
+                        >
+                          PDF
+                        </a>
+                      )}
+                    </div>
                   </article>
                 ))
               )}
