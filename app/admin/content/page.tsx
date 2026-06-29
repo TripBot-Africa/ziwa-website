@@ -81,18 +81,26 @@ export default function AdminContentPage() {
   }
 
   async function uploadFile(bucket: string, file: File | null, slug: string) {
-    if (!file) return null;
+  if (!file) return null;
 
-    const ext = file.name.split(".").pop();
-    const fileName = `${slug}-${Date.now()}.${ext}`;
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("bucket", bucket);
+  formData.append("slug", slug);
 
-    const { error } = await supabase.storage.from(bucket).upload(fileName, file);
+  const res = await fetch("/api/admin-upload", {
+    method: "POST",
+    body: formData,
+  });
 
-    if (error) throw new Error(error.message);
+  const json = await res.json();
 
-    const { data } = supabase.storage.from(bucket).getPublicUrl(fileName);
-    return data.publicUrl;
+  if (!res.ok) {
+    throw new Error(json.error || "File upload failed.");
   }
+
+  return json.url;
+}
 
   function addFormat(type: "h2" | "h3" | "bold" | "quote" | "bullet") {
     const insert =
